@@ -8,7 +8,6 @@ import { skills } from "@/data/skills"
 import CharacterAvatar from "@/components/CharacterAvatar"
 import DifficultyBadge from "@/components/DifficultyBadge"
 import ProgressBar from "@/components/ProgressBar"
-import { getWeekKey } from "@/lib/utils"
 
 const staggerContainer = {
   hidden: { opacity: 0 },
@@ -26,8 +25,8 @@ const staggerItem = {
 export default function Home() {
   const navigate = useNavigate()
   const userProfile = useGameStore((s) => s.userProfile)
+  const missions = useGameStore((s) => s.missions)
   const ensureWeekArchive = useGameStore((s) => s.ensureWeekArchive)
-  const getMissionsByWeek = useGameStore((s) => s.getMissionsByWeek)
 
   useEffect(() => {
     if (!userProfile) {
@@ -39,10 +38,7 @@ export default function Home() {
     ensureWeekArchive()
   }, [ensureWeekArchive])
 
-  const currentWeekMissions = useMemo(
-    () => getMissionsByWeek(getWeekKey()),
-    [getMissionsByWeek]
-  )
+  const currentWeekMissions = missions
 
   const scenarioProgress = useMemo(
     () =>

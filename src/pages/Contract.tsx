@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { Plus, Trash2, ChevronLeft, ChevronRight, Calendar, Lock } from "lucide-react"
@@ -33,11 +33,11 @@ const staggerItem = {
 export default function Contract() {
   const navigate = useNavigate()
   const missions = useGameStore((s) => s.missions)
+  const weeklySnapshots = useGameStore((s) => s.weeklySnapshots)
   const toggleMission = useGameStore((s) => s.toggleMission)
   const addMission = useGameStore((s) => s.addMission)
   const removeMission = useGameStore((s) => s.removeMission)
   const ensureWeekArchive = useGameStore((s) => s.ensureWeekArchive)
-  const getMissionsByWeek = useGameStore((s) => s.getMissionsByWeek)
 
   const [selectedWeekKey, setSelectedWeekKey] = useState(getWeekKey())
   const [showModal, setShowModal] = useState(false)
@@ -46,29 +46,69 @@ export default function Contract() {
   const [newEmoji, setNewEmoji] = useState("🎯")
   const [showWeekPicker, setShowWeekPicker] = useState(false)
 
+  const weekPickerRef = useRef<HTMLDivElement>(null)
+  const initializedRef = useRef(false)
+
   useEffect(() => {
     ensureWeekArchive()
   }, [ensureWeekArchive])
 
   useEffect(() => {
+    if (initializedRef.current) return
     if (missions.length === 0) {
       defaultMissions.forEach((m) => addMission(m))
     }
-  }, [])
+    initializedRef.current = true
+  }, [missions, addMission])
+
+  useEffect(() => {
+    if (!showWeekPicker) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        weekPickerRef.current &&
+        !weekPickerRef.current.contains(e.target as Node)
+      ) {
+        setShowWeekPicker(false)
+      }
+    }
+
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowWeekPicker(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEsc)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEsc)
+    }
+  }, [showWeekPicker])
 
   const weekOptions = useMemo(() => generateWeekKeys(8), [])
 
   const isReadonly = !isCurrentWeek(selectedWeekKey)
 
-  const displayMissions = useMemo(
-    () => getMissionsByWeek(selectedWeekKey),
-    [selectedWeekKey, getMissionsByWeek]
-  )
+  const displayMissions = useMemo(() => {
+    if (isCurrentWeek(selectedWeekKey)) {
+      return missions
+    }
+    const snapshot = weeklySnapshots.find((s) => s.weekKey === selectedWeekKey)
+    return snapshot ? snapshot.missions : []
+  }, [selectedWeekKey, missions, weeklySnapshots])
 
-  const completedCount = displayMissions.filter((m) => m.completed).length
+  const completedCount = useMemo(
+    () => displayMissions.filter((m) => m.completed).length,
+    [displayMissions]
+  )
   const totalCount = displayMissions.length
   const allCompleted = totalCount > 0 && completedCount === totalCount
-  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+  const progressPercent = useMemo(
+    () => (totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0),
+    [completedCount, totalCount]
+  )
 
   const currentWeekIndex = weekOptions.findIndex((w) => w === selectedWeekKey)
 
@@ -124,7 +164,7 @@ export default function Contract() {
           transition={{ duration: 0.4, delay: 0.05 }}
           className="mb-6"
         >
-          <div className="relative">
+          <div className="relative" ref={weekPickerRef}>
             <button
               onClick={() => setShowWeekPicker(!showWeekPicker)}
               className="w-full card-adventure flex items-center justify-between px-4 py-3 cursor-pointer hover:border-adventure-orange transition-colors"
@@ -171,7 +211,7 @@ export default function Contract() {
                   exit={{ opacity: 0, y: -10 }}
                   className="absolute top-full left-0 right-0 mt-2 card-adventure !p-2 z-20 shadow-lg"
                 >
-                  {weekOptions.map((weekKey, index) => {
+                  {weekOptions.map((weekKey) => {
                     const isSelected = weekKey === selectedWeekKey
                     const isCurrent = isCurrentWeek(weekKey)
                     return (
@@ -234,6 +274,7 @@ export default function Contract() {
                         ? "bg-gradient-to-r from-gray-400 to-gray-300"
                         : "bg-gradient-to-r from-adventure-teal to-adventure-teal/70"
                     }`}
+                    key={progressPercent}
                     initial={{ width: 0 }}
                     animate={{ width: `${progressPercent}%` }}
                     transition={{ duration: 0.6, ease: "easeOut" }}
