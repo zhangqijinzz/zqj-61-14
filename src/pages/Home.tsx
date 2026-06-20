@@ -8,6 +8,7 @@ import { skills } from "@/data/skills"
 import CharacterAvatar from "@/components/CharacterAvatar"
 import DifficultyBadge from "@/components/DifficultyBadge"
 import ProgressBar from "@/components/ProgressBar"
+import { getWeekKey } from "@/lib/utils"
 
 const staggerContainer = {
   hidden: { opacity: 0 },
@@ -25,13 +26,23 @@ const staggerItem = {
 export default function Home() {
   const navigate = useNavigate()
   const userProfile = useGameStore((s) => s.userProfile)
-  const missions = useGameStore((s) => s.missions)
+  const ensureWeekArchive = useGameStore((s) => s.ensureWeekArchive)
+  const getMissionsByWeek = useGameStore((s) => s.getMissionsByWeek)
 
   useEffect(() => {
     if (!userProfile) {
       navigate("/")
     }
   }, [userProfile, navigate])
+
+  useEffect(() => {
+    ensureWeekArchive()
+  }, [ensureWeekArchive])
+
+  const currentWeekMissions = useMemo(
+    () => getMissionsByWeek(getWeekKey()),
+    [getMissionsByWeek]
+  )
 
   const scenarioProgress = useMemo(
     () =>
@@ -53,15 +64,11 @@ export default function Home() {
     [userProfile]
   )
 
-  const missionProgress = useMemo(
-    () =>
-      Math.round(
-        (missions.filter((m) => m.completed).length /
-          Math.max(missions.length, 1)) *
-          100
-      ),
-    [missions]
-  )
+  const missionProgress = useMemo(() => {
+    const completed = currentWeekMissions.filter((m) => m.completed).length
+    const total = currentWeekMissions.length
+    return total > 0 ? Math.round((completed / total) * 100) : 0
+  }, [currentWeekMissions])
 
   const dailyScenario = useMemo(() => {
     if (!userProfile) return null

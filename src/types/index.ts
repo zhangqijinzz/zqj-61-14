@@ -89,3 +89,11 @@ export interface ScenarioResult {
   choices: { sceneId: string; optionId: string }[]
   completedAt: string
 }
+
+export interface WeeklySnapshot {
+  weekKey: string
+  weekStart: string
+  weekEnd: string
+  missions: Mission[]
+  archivedAt: string
+}

@@ -1,6 +1,13 @@
 import { create } from 'zustand'
-import { UserProfile, CharacterType, ScenarioResult, Mission, TreeHolePost, Reply } from '@/types'
+import { UserProfile, CharacterType, ScenarioResult, Mission, TreeHolePost, Reply, WeeklySnapshot } from '@/types'
 import { treeHolePosts } from '@/data/treeHolePosts'
+import {
+  getWeekKey,
+  getWeekStart,
+  getWeekEnd,
+  formatDate,
+  isCurrentWeek,
+} from '@/lib/utils'
 
 const STORAGE_KEY = 'dad-adventure-state'
 
@@ -35,6 +42,8 @@ interface GameState {
   userProfile: UserProfile | null
   scenarioResults: ScenarioResult[]
   missions: Mission[]
+  weeklySnapshots: WeeklySnapshot[]
+  lastProcessedWeekKey: string | null
   posts: TreeHolePost[]
 }
 
@@ -49,6 +58,8 @@ interface GameActions {
   addReplyToPost: (postId: string, reply: Reply) => void
   togglePostLike: (postId: string) => void
   resetGame: () => void
+  ensureWeekArchive: () => void
+  getMissionsByWeek: (weekKey: string) => Mission[]
 }
 
 type StoreType = GameState & GameActions
@@ -59,6 +70,8 @@ export const useGameStore = create<StoreType>()((set, get) => ({
   userProfile: savedState?.userProfile ?? null,
   scenarioResults: savedState?.scenarioResults ?? [],
   missions: savedState?.missions ?? [],
+  weeklySnapshots: savedState?.weeklySnapshots ?? [],
+  lastProcessedWeekKey: savedState?.lastProcessedWeekKey ?? null,
   posts: savedState?.posts ?? treeHolePosts,
 
   createProfile: (characterType, nickname) => {
@@ -75,6 +88,7 @@ export const useGameStore = create<StoreType>()((set, get) => ({
       earnedBadges: [],
     }
     set({ userProfile: profile })
+    get().ensureWeekArchive()
     saveToLocalStorage(get())
   },
 
@@ -123,6 +137,7 @@ export const useGameStore = create<StoreType>()((set, get) => ({
   },
 
   toggleMission: (missionId) => {
+    get().ensureWeekArchive()
     const state = get()
     const mission = state.missions.find((m) => m.id === missionId)
     if (!mission) return
@@ -156,12 +171,14 @@ export const useGameStore = create<StoreType>()((set, get) => ({
   },
 
   addMission: (mission) => {
+    get().ensureWeekArchive()
     const state = get()
     set({ missions: [...state.missions, mission] })
     saveToLocalStorage(get())
   },
 
   removeMission: (missionId) => {
+    get().ensureWeekArchive()
     const state = get()
 
     let newProfile = state.userProfile
@@ -212,8 +229,90 @@ export const useGameStore = create<StoreType>()((set, get) => ({
       userProfile: null,
       scenarioResults: [],
       missions: [],
+      weeklySnapshots: [],
+      lastProcessedWeekKey: null,
       posts: treeHolePosts,
     })
     localStorage.removeItem(STORAGE_KEY)
+  },
+
+  ensureWeekArchive: () => {
+    const state = get()
+    const currentWeekKey = getWeekKey()
+
+    if (state.lastProcessedWeekKey === currentWeekKey) {
+      return
+    }
+
+    if (!state.lastProcessedWeekKey) {
+      set({ lastProcessedWeekKey: currentWeekKey })
+      saveToLocalStorage(get())
+      return
+    }
+
+    if (state.lastProcessedWeekKey !== currentWeekKey) {
+      const lastKey = state.lastProcessedWeekKey
+      const lastStart = getWeekStart(
+        new Date(lastKey.split("-").map(Number).join("-"))
+      )
+      const lastEnd = getWeekEnd(lastStart)
+
+      const existingSnapshot = state.weeklySnapshots.find(
+        (s) => s.weekKey === lastKey
+      )
+
+      if (!existingSnapshot && state.missions.length > 0) {
+        const snapshot: WeeklySnapshot = {
+          weekKey: lastKey,
+          weekStart: formatDate(lastStart),
+          weekEnd: formatDate(lastEnd),
+          missions: JSON.parse(JSON.stringify(state.missions)),
+          archivedAt: new Date().toISOString(),
+        }
+        set({
+          weeklySnapshots: [...state.weeklySnapshots, snapshot],
+        })
+      }
+
+      const newState = get()
+      const currentWeekMissions = newState.missions.map((m) => {
+        const missionWeekKey = m.weekStart
+          ? getWeekKey(new Date(m.weekStart))
+          : null
+        if (missionWeekKey && isCurrentWeek(missionWeekKey)) {
+          return m
+        }
+        if (missionWeekKey && missionWeekKey === currentWeekKey) {
+          return m
+        }
+        return {
+          ...m,
+          completed: false,
+          weekStart: formatDate(getWeekStart()),
+        }
+      })
+
+      set({
+        missions: currentWeekMissions,
+        lastProcessedWeekKey: currentWeekKey,
+      })
+      saveToLocalStorage(get())
+    }
+  },
+
+  getMissionsByWeek: (weekKey: string): Mission[] => {
+    get().ensureWeekArchive()
+    const state = get()
+
+    if (isCurrentWeek(weekKey)) {
+      return state.missions
+    }
+
+    const snapshot = state.weeklySnapshots.find((s) => s.weekKey === weekKey)
+    if (snapshot) {
+      return snapshot.missions
+    }
+
+    return []
   },
 }))
